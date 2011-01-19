@@ -51,7 +51,7 @@ def patch(path, replacers)
     end
   end
   File.open(path, "w") do |f|
-    f << lines
+    f << lines.join
   end
 end
 
@@ -79,18 +79,26 @@ task :store do
         ["<html ", "<html xmlns=\"http://www.w3.org/1999/xhtml\"\n      "],
         [/<body(.*?)>/, "<body\\1><div id=\"page-store-template\">"],
         ["</body>", "</div></body>"],
-        [/<script(.*?)>/, "<script\\1>//<![CDATA["],
-        [/<\/script>/, "//]]></script>"],
+        [/<script(.*?)>/, "<script\\1>//<![CDATA[\n"],
+        [/<\/script>/, "\n//]]></script>"],
         [/<link(.*?)([\/]{0,1})>/, "<link\\1/>"],
         [/<img(.*?)([\/]{0,1})>/, "<img\\1/>"],
         [/<br>/, "<br/>"],
-        [/href="\//, "href=\""],
-        [/src="\//, "src=\""],
+        [/href="\/([^\/])/, "href=\"\\1"],
+        [/src="\/([^\/])/, "src=\"\\1"],
         ["&nbsp;", "&#160;"],
         ["&copy;", "&#169;"],
         ["##INSERT STORE CONTENT HERE##", "\n<!-- TemplateBeginEditable name=\"Content\" -->\n\n<!-- TemplateEndEditable -->"],
         ["</title>", "</title>\n<link title=\"main\" rel=\"stylesheet\" href=\"http://resource.fastspring.com/app/s/style/base.css\" media=\"screen,projection\" type=\"text/css\" />\n<link title=\"main\" rel=\"stylesheet\" href=\"http://resource.fastspring.com/app/store/style/base.css\" media=\"screen,projection\" type=\"text/css\" />"]
     ])
+    
+    content = File.read(STORE_TEMPLATE_WORKING_DIR_WINDOW)
+    content.gsub!(/<!-- SCRIPTS START -->(.*?)<!-- SCRIPTS END -->(.*?)<body(.*?)>/m, "\\2<body\\3>\\1")
+    content.gsub!(/src="\/\/cdn\.optimizely\.com/m, "src=\"https://cdn.optimizely.com") # FastSpring tries to be too smart during upload and removes non-resolvable urls with unknown.gif
+    content.gsub!(/src="http:/m, "src=\"https:")
+    File.open(STORE_TEMPLATE_WORKING_DIR_WINDOW, "w") do |f|
+      f << content
+    end
 
     # fix paths in CSS
     patch(STORE_TEMPLATE_WORKING_DIR_SHARED_CSS_SITE, [
@@ -124,6 +132,22 @@ task :store do
     end
     
     puts "Store template is in " + ZIP_PATH.green + ". Don't forget to upload it to FastSpring"
+end
+
+desc "generate 404.html and copy it to all subdomains"
+task :error404 do 
+    # build the site using jekyll
+    sys("rm -rf \"#{SITE_DIR}\"")
+    sys('jekyll')
+    
+    page = File.join(SITE_DIR, "404.html")
+    die("something went wrong, page #{page} does not exist") unless File.exists?(page)
+    
+    Dir.glob(File.join(ROOT_DIR, "..", "*")) do |path|
+        next unless File.directory?(path)
+        dir = File.expand_path(path)
+        sys("cp \"#{page}\" \"#{dir}\"")
+    end
 end
 
 task :default => :store
